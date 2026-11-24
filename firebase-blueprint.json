@@ -1,0 +1,187 @@
+{
+  "entities": {
+    "UserWorkspace": {
+      "title": "UserWorkspace",
+      "description": "Espace personnel isolé d'un utilisateur authentifié.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "description": "UID Firebase Auth du propriétaire.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "displayName": {
+          "type": "string",
+          "description": "Nom affiché de l'utilisateur.",
+          "minLength": 0,
+          "maxLength": 120
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Horodatage serveur de création."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Horodatage serveur de dernière mise à jour."
+        }
+      },
+      "required": ["ownerId", "displayName", "createdAt", "updatedAt"]
+    },
+    "DayEntryRecord": {
+      "title": "DayEntryRecord",
+      "description": "Relevé quotidien PAC, consommation EDF et remarques.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "date": {
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 10,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+        },
+        "temp": {
+          "type": "number",
+          "description": "Température extérieure en °C ou null."
+        },
+        "pac_conso": {
+          "type": "number",
+          "description": "Énergie électrique consommée par la PAC (kWh) ou null."
+        },
+        "pac_prod": {
+          "type": "number",
+          "description": "Chaleur produite par la PAC (kWh) ou null."
+        },
+        "cop_aff": {
+          "type": "number",
+          "description": "COP affiché par la PAC ou null."
+        },
+        "edf_kwh": {
+          "type": "number",
+          "description": "Énergie totale maison EDF (kWh) ou null."
+        },
+        "edf_eur": {
+          "type": "number",
+          "description": "Dépense EDF saisie (€) ou null."
+        },
+        "gaz_kwh": {
+          "type": "number",
+          "description": "Gaz consommé (kWh) ou null."
+        },
+        "remarque": {
+          "type": "string",
+          "maxLength": 500,
+          "description": "Remarque ou cycles ECS."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Horodatage serveur de mise à jour."
+        }
+      },
+      "required": ["ownerId", "date", "updatedAt"]
+    },
+    "ReferenceConfig": {
+      "title": "ReferenceConfig",
+      "description": "Paramètres tarifaires et séries de référence N-1 / N-2 / N-3.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "params": {
+          "type": "object",
+          "description": "Paramètres tarifaires et seuils."
+        },
+        "enedis": {
+          "type": "object",
+          "description": "Série journalière Enedis N-1/N-2/N-3 (kWh)."
+        },
+        "gaz": {
+          "type": "object",
+          "description": "Série journalière Gaz N-1/N-2/N-3 (kWh)."
+        },
+        "meteo": {
+          "type": "object",
+          "description": "Températures extérieures historiques (°C)."
+        },
+        "n1_total": {
+          "type": "object",
+          "description": "Dépense totale N-1 journalière (€)."
+        },
+        "year_n1": {
+          "type": "object",
+          "description": "Factures mensuelles N-1 (oct à sept) ou null."
+        },
+        "excelFileName": {
+          "type": "string",
+          "maxLength": 180
+        },
+        "importedAt": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["ownerId", "params", "enedis", "gaz", "meteo", "n1_total", "updatedAt"]
+    },
+    "GoalsConfig": {
+      "title": "GoalsConfig",
+      "description": "Objectifs budgétaires (€) et de consommation (kWh) mensuels et annuels.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "monthly": {
+          "type": "object",
+          "description": "Plafonds mensuels par défaut et par mois."
+        },
+        "annual": {
+          "type": "object",
+          "description": "Plafonds annuels."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["ownerId", "monthly", "annual", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserWorkspace" },
+      "description": "Document racine privé de l'utilisateur authentifié."
+    },
+    "/users/{userId}/entries/{dayId}": {
+      "schema": { "$ref": "#/entities/DayEntryRecord" },
+      "description": "Relevés journaliers appartenant exclusivement à l'utilisateur."
+    },
+    "/users/{userId}/reference/{docId}": {
+      "schema": { "$ref": "#/entities/ReferenceConfig" },
+      "description": "Configuration tarifaire et séries N-1 (document 'current')."
+    },
+    "/users/{userId}/goals/{docId}": {
+      "schema": { "$ref": "#/entities/GoalsConfig" },
+      "description": "Objectifs budgétaires et consommation (document 'current')."
+    }
+  }
+}

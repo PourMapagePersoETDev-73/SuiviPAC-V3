@@ -1,0 +1,5 @@
+openpyxl
+lxml
+matplotlib
+cryptography
+pyinstaller

@@ -1,0 +1,6 @@
+{
+  "name": "Suivi PAC",
+  "description": "Tableau de bord et saisie quotidienne pour le suivi de performance, consommation et économies d'une pompe à chaleur.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

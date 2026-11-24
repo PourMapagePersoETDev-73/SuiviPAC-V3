@@ -1,0 +1,297 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Filet de sécurité global par défaut : tout refuser explicitement
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidDayId(dayId) {
+      return dayId is string && dayId.size() == 10 && dayId.matches('^\\d{4}-\\d{2}-\\d{2}$');
+    }
+
+    function isNumber(val) {
+      return val is int || val is float;
+    }
+
+    function isNullableNumber(val, minVal, maxVal) {
+      return val == null || (isNumber(val) && val >= minVal && val <= maxVal);
+    }
+
+    function isNullableString(val, maxLen) {
+      return val == null || (val is string && val.size() <= maxLen);
+    }
+
+    function isParentOwner(userId) {
+      return exists(/databases/$(database)/documents/users/$(userId)) &&
+        get(/databases/$(database)/documents/users/$(userId)).data.ownerId == request.auth.uid;
+    }
+
+    function isValidUserWorkspace(data, userId) {
+      return data.keys().hasAll(['ownerId', 'displayName', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['ownerId', 'displayName', 'createdAt', 'updatedAt']) &&
+        data.ownerId is string &&
+        data.ownerId.size() >= 1 &&
+        data.ownerId.size() <= 128 &&
+        data.ownerId.matches('^[a-zA-Z0-9_\\-]+$') &&
+        data.ownerId == userId &&
+        data.displayName is string &&
+        data.displayName.size() <= 120 &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidDayEntry(data, userId, dayId) {
+      return data.keys().hasAll([
+          'ownerId', 'date', 'temp', 'pac_conso', 'pac_prod',
+          'cop_aff', 'edf_kwh', 'edf_eur', 'gaz_kwh', 'remarque', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'ownerId', 'date', 'temp', 'pac_conso', 'pac_prod',
+          'cop_aff', 'edf_kwh', 'edf_eur', 'gaz_kwh', 'remarque', 'updatedAt'
+        ]) &&
+        data.ownerId is string &&
+        data.ownerId.size() >= 1 &&
+        data.ownerId.size() <= 128 &&
+        data.ownerId.matches('^[a-zA-Z0-9_\\-]+$') &&
+        data.ownerId == userId &&
+        data.date is string &&
+        data.date.size() == 10 &&
+        data.date.matches('^\\d{4}-\\d{2}-\\d{2}$') &&
+        data.date == dayId &&
+        isNullableNumber(data.temp, -60, 65) &&
+        isNullableNumber(data.pac_conso, 0, 5000) &&
+        isNullableNumber(data.pac_prod, 0, 20000) &&
+        isNullableNumber(data.cop_aff, 0, 20) &&
+        isNullableNumber(data.edf_kwh, 0, 5000) &&
+        isNullableNumber(data.edf_eur, 0, 5000) &&
+        isNullableNumber(data.gaz_kwh, 0, 5000) &&
+        isNullableString(data.remarque, 500) &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidReferenceConfig(data, userId) {
+      return data.keys().hasAll([
+          'ownerId', 'params', 'enedis', 'gaz', 'meteo',
+          'n1_total', 'year_n1', 'excelFileName', 'importedAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'ownerId', 'params', 'enedis', 'gaz', 'meteo',
+          'n1_total', 'year_n1', 'excelFileName', 'importedAt', 'updatedAt'
+        ]) &&
+        data.ownerId is string &&
+        data.ownerId.size() >= 1 &&
+        data.ownerId.size() <= 128 &&
+        data.ownerId.matches('^[a-zA-Z0-9_\\-]+$') &&
+        data.ownerId == userId &&
+        data.params is map &&
+        data.params.keys().hasAll([
+          'pe', 'abo', 'pg', 'abg', 'rend', 'fen', 'tol', 'tolt',
+          'cop_cible', 'cop_plancher', 'start', 'obj_pct', 'obj_eur'
+        ]) &&
+        data.params.keys().hasOnly([
+          'pe', 'abo', 'pg', 'abg', 'rend', 'fen', 'tol', 'tolt',
+          'cop_cible', 'cop_plancher', 'start', 'obj_pct', 'obj_eur'
+        ]) &&
+        isNumber(data.params.pe) &&
+        isNumber(data.params.abo) &&
+        isNumber(data.params.pg) &&
+        isNumber(data.params.abg) &&
+        isNumber(data.params.rend) &&
+        isNumber(data.params.fen) &&
+        isNumber(data.params.tol) &&
+        isNumber(data.params.tolt) &&
+        isNumber(data.params.cop_cible) &&
+        isNumber(data.params.cop_plancher) &&
+        isNumber(data.params.obj_pct) &&
+        isNumber(data.params.obj_eur) &&
+        data.params.start is string &&
+        data.params.start.size() == 10 &&
+        data.params.start.matches('^\\d{4}-\\d{2}-\\d{2}$') &&
+        data.enedis is map &&
+        data.enedis.size() <= 2000 &&
+        data.gaz is map &&
+        data.gaz.size() <= 2000 &&
+        data.meteo is map &&
+        data.meteo.size() <= 2000 &&
+        data.n1_total is map &&
+        data.n1_total.size() <= 2000 &&
+        (
+          data.year_n1 == null ||
+          (
+            data.year_n1 is map &&
+            data.year_n1.keys().hasAll(['labels', 'gaz', 'elec']) &&
+            data.year_n1.keys().hasOnly(['labels', 'gaz', 'elec']) &&
+            data.year_n1.labels is list &&
+            data.year_n1.labels.size() == 12 &&
+            data.year_n1.labels[0] is string &&
+            data.year_n1.gaz is list &&
+            data.year_n1.gaz.size() == 12 &&
+            data.year_n1.elec is list &&
+            data.year_n1.elec.size() == 12
+          )
+        ) &&
+        isNullableString(data.excelFileName, 180) &&
+        isNullableString(data.importedAt, 64) &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidGoalsConfig(data, userId) {
+      return data.keys().hasAll(['ownerId', 'monthly', 'annual', 'updatedAt']) &&
+        data.keys().hasOnly(['ownerId', 'monthly', 'annual', 'updatedAt']) &&
+        data.ownerId is string &&
+        data.ownerId.size() >= 1 &&
+        data.ownerId.size() <= 128 &&
+        data.ownerId.matches('^[a-zA-Z0-9_\\-]+$') &&
+        data.ownerId == userId &&
+        data.monthly is map &&
+        data.monthly.keys().hasAll(['pac_kwh', 'edf_kwh', 'edf_eur', 'byMonth']) &&
+        data.monthly.keys().hasOnly(['pac_kwh', 'edf_kwh', 'edf_eur', 'byMonth']) &&
+        isNumber(data.monthly.pac_kwh) && data.monthly.pac_kwh > 0 &&
+        isNumber(data.monthly.edf_kwh) && data.monthly.edf_kwh > 0 &&
+        isNumber(data.monthly.edf_eur) && data.monthly.edf_eur > 0 &&
+        data.monthly.byMonth is map &&
+        data.monthly.byMonth.size() <= 120 &&
+        data.annual is map &&
+        data.annual.keys().hasAll(['pac_kwh', 'edf_kwh', 'edf_eur']) &&
+        data.annual.keys().hasOnly(['pac_kwh', 'edf_kwh', 'edf_eur']) &&
+        isNumber(data.annual.pac_kwh) && data.annual.pac_kwh > 0 &&
+        isNumber(data.annual.edf_kwh) && data.annual.edf_kwh > 0 &&
+        isNumber(data.annual.edf_eur) && data.annual.edf_eur > 0 &&
+        data.updatedAt is timestamp;
+    }
+
+    match /users/{userId} {
+      allow get: if isVerifiedUser() && isOwner(userId) && isValidId(userId);
+      allow list: if false;
+      allow create: if isVerifiedUser() &&
+        isOwner(userId) &&
+        isValidId(userId) &&
+        isValidUserWorkspace(incoming(), userId) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isVerifiedUser() &&
+        isOwner(userId) &&
+        isValidId(userId) &&
+        isValidUserWorkspace(incoming(), userId) &&
+        incoming().ownerId == existing().ownerId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'updatedAt']);
+      allow delete: if false;
+
+      match /entries/{dayId} {
+        allow get: if isVerifiedUser() &&
+          isOwner(userId) &&
+          isValidDayId(dayId) &&
+          isParentOwner(userId);
+        allow list: if isVerifiedUser() &&
+          isOwner(userId) &&
+          existing().ownerId == request.auth.uid;
+        allow create: if isVerifiedUser() &&
+          isOwner(userId) &&
+          isValidDayId(dayId) &&
+          isValidDayEntry(incoming(), userId, dayId) &&
+          incoming().updatedAt == request.time &&
+          isParentOwner(userId);
+        allow update: if isVerifiedUser() &&
+          isOwner(userId) &&
+          isValidDayId(dayId) &&
+          isValidDayEntry(incoming(), userId, dayId) &&
+          incoming().ownerId == existing().ownerId &&
+          incoming().date == existing().date &&
+          incoming().updatedAt == request.time &&
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'temp', 'pac_conso', 'pac_prod', 'cop_aff',
+            'edf_kwh', 'edf_eur', 'gaz_kwh', 'remarque', 'updatedAt'
+          ]) &&
+          isParentOwner(userId);
+        allow delete: if isVerifiedUser() &&
+          isOwner(userId) &&
+          isValidDayId(dayId) &&
+          isParentOwner(userId);
+      }
+
+      match /reference/{docId} {
+        allow get: if isVerifiedUser() &&
+          isOwner(userId) &&
+          isValidId(docId) &&
+          docId == 'current' &&
+          isParentOwner(userId);
+        allow list: if false;
+        allow create: if isVerifiedUser() &&
+          isOwner(userId) &&
+          isValidId(docId) &&
+          docId == 'current' &&
+          isValidReferenceConfig(incoming(), userId) &&
+          incoming().updatedAt == request.time &&
+          isParentOwner(userId);
+        allow update: if isVerifiedUser() &&
+          isOwner(userId) &&
+          isValidId(docId) &&
+          docId == 'current' &&
+          isValidReferenceConfig(incoming(), userId) &&
+          incoming().ownerId == existing().ownerId &&
+          incoming().updatedAt == request.time &&
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'params', 'enedis', 'gaz', 'meteo', 'n1_total',
+            'year_n1', 'excelFileName', 'importedAt', 'updatedAt'
+          ]) &&
+          isParentOwner(userId);
+        allow delete: if false;
+      }
+
+      match /goals/{docId} {
+        allow get: if isVerifiedUser() &&
+          isOwner(userId) &&
+          isValidId(docId) &&
+          docId == 'current' &&
+          isParentOwner(userId);
+        allow list: if false;
+        allow create: if isVerifiedUser() &&
+          isOwner(userId) &&
+          isValidId(docId) &&
+          docId == 'current' &&
+          isValidGoalsConfig(incoming(), userId) &&
+          incoming().updatedAt == request.time &&
+          isParentOwner(userId);
+        allow update: if isVerifiedUser() &&
+          isOwner(userId) &&
+          isValidId(docId) &&
+          docId == 'current' &&
+          isValidGoalsConfig(incoming(), userId) &&
+          incoming().ownerId == existing().ownerId &&
+          incoming().updatedAt == request.time &&
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'monthly', 'annual', 'updatedAt'
+          ]) &&
+          isParentOwner(userId);
+        allow delete: if false;
+      }
+    }
+  }
+}

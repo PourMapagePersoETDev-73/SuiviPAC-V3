@@ -1,0 +1,281 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --font-display: 'Plus Jakarta Sans', system-ui, sans-serif;
+    --font-body: 'DM Sans', system-ui, sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+
+    --bg-canvas: #f8fafc;
+    --bg-card: #ffffff;
+    --bg-card-glass: rgba(255, 255, 255, 0.95);
+    --bg-soft: #f8fafc;
+    --bg-muted: #f1f5f9;
+    --bg-hover: #f1f5f9;
+    --border-main: #e2e8f0;
+    --border-subtle: #f1f5f9;
+    --text-primary: #0f172a;
+    --text-secondary: #334155;
+    --text-muted: #64748b;
+    --text-faint: #94a3b8;
+
+    --chart-pac: #0F766E;
+    --chart-ref: #0284C7;
+    --chart-good: #16A34A;
+    --chart-bad: #DC2626;
+    --chart-warn: #D97706;
+    --chart-gaz: #EA580C;
+    --chart-navy: #0F172A;
+    --chart-grid: #E2E8F0;
+    --chart-axis: #64748B;
+    --chart-faint: #94A3B8;
+    --chart-track: #E2E8F0;
+    --chart-dot-stroke: #FFFFFF;
+  }
+
+  [data-theme="medium"] {
+    --bg-canvas: #d6dde6;
+    --bg-card: #e6ebf1;
+    --bg-card-glass: rgba(230, 235, 241, 0.95);
+    --bg-soft: #dde4ec;
+    --bg-muted: #cfd8e3;
+    --bg-hover: #d5dee8;
+    --border-main: #bec9d6;
+    --border-subtle: #ced7e2;
+    --text-primary: #0f172a;
+    --text-secondary: #1e293b;
+    --text-muted: #475569;
+    --text-faint: #64748b;
+
+    --chart-pac: #0F766E;
+    --chart-ref: #0369A1;
+    --chart-good: #15803D;
+    --chart-bad: #B91C1C;
+    --chart-warn: #B45309;
+    --chart-gaz: #C2410C;
+    --chart-navy: #0F172A;
+    --chart-grid: #C2CCD8;
+    --chart-axis: #475569;
+    --chart-faint: #64748B;
+    --chart-track: #C5D0DC;
+    --chart-dot-stroke: #E6EBF1;
+  }
+
+  [data-theme="dark"] {
+    color-scheme: dark;
+    --bg-canvas: #0b1117;
+    --bg-card: #131c26;
+    --bg-card-glass: rgba(19, 28, 38, 0.95);
+    --bg-soft: #182330;
+    --bg-muted: #1e2b3a;
+    --bg-hover: #223142;
+    --border-main: #273649;
+    --border-subtle: #1e2b3a;
+    --text-primary: #f1f5f9;
+    --text-secondary: #cbd5e1;
+    --text-muted: #94a3b8;
+    --text-faint: #64748b;
+
+    --chart-pac: #2DD4BF;
+    --chart-ref: #38BDF8;
+    --chart-good: #34D399;
+    --chart-bad: #F87171;
+    --chart-warn: #FBBF24;
+    --chart-gaz: #FB923C;
+    --chart-navy: #F1F5F9;
+    --chart-grid: #263445;
+    --chart-axis: #94A3B8;
+    --chart-faint: #64748B;
+    --chart-track: #243242;
+    --chart-dot-stroke: #131C26;
+  }
+
+  body {
+    font-family: var(--font-body);
+    background-color: var(--bg-canvas);
+    color: var(--text-primary);
+    transition: background-color 180ms ease, color 180ms ease;
+  }
+
+  h1, h2, h3, h4, .font-display {
+    font-family: var(--font-display);
+  }
+
+  .font-mono-num {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ============================================================================
+ * Thèmes Médium & Dark : adaptation homogène des surfaces, bordures et textes
+ * ============================================================================ */
+[data-theme="medium"] .bg-slate-50,
+[data-theme="medium"] .bg-\[\#F3F6F6\] {
+  background-color: var(--bg-canvas);
+}
+
+[data-theme="medium"] .bg-white {
+  background-color: var(--bg-card);
+}
+
+[data-theme="medium"] .bg-white\/95 {
+  background-color: var(--bg-card-glass);
+}
+
+[data-theme="medium"] .bg-slate-50\/50,
+[data-theme="medium"] .bg-slate-50\/70,
+[data-theme="medium"] .bg-slate-50\/80 {
+  background-color: var(--bg-soft);
+}
+
+[data-theme="medium"] .bg-slate-100,
+[data-theme="medium"] .bg-slate-100\/90,
+[data-theme="medium"] .bg-slate-200 {
+  background-color: var(--bg-muted);
+}
+
+[data-theme="medium"] .bg-\[\#E3F2EF\],
+[data-theme="medium"] .bg-\[\#D6EFEA\] {
+  background-color: #cde5e0;
+}
+
+[data-theme="medium"] .border-slate-200,
+[data-theme="medium"] .border-slate-200\/80,
+[data-theme="medium"] .border-slate-200\/70,
+[data-theme="medium"] .border-slate-300 {
+  border-color: var(--border-main);
+}
+
+[data-theme="medium"] .border-slate-100,
+[data-theme="medium"] .divide-slate-100 > :not(:last-child) {
+  border-color: var(--border-subtle);
+}
+
+[data-theme="medium"] .text-slate-900 { color: var(--text-primary); }
+[data-theme="medium"] .text-slate-800,
+[data-theme="medium"] .text-slate-700 { color: var(--text-secondary); }
+[data-theme="medium"] .text-slate-600,
+[data-theme="medium"] .text-slate-500 { color: var(--text-muted); }
+[data-theme="medium"] .text-slate-400 { color: var(--text-faint); }
+
+[data-theme="medium"] input,
+[data-theme="medium"] select {
+  background-color: #eef2f6;
+}
+
+[data-theme="medium"] .hover\:bg-slate-50:hover,
+[data-theme="medium"] .hover\:bg-slate-50\/80:hover,
+[data-theme="medium"] .hover\:bg-slate-50\/90:hover {
+  background-color: var(--bg-hover);
+}
+
+[data-theme="medium"] .hover\:bg-slate-100:hover,
+[data-theme="medium"] .hover\:bg-slate-200\/80:hover {
+  background-color: #c7d1de;
+}
+
+/* Dark Theme */
+[data-theme="dark"] .bg-slate-50,
+[data-theme="dark"] .bg-\[\#F3F6F6\] {
+  background-color: var(--bg-canvas);
+}
+
+[data-theme="dark"] .bg-white {
+  background-color: var(--bg-card);
+}
+
+[data-theme="dark"] .bg-white\/95 {
+  background-color: var(--bg-card-glass);
+}
+
+[data-theme="dark"] .bg-slate-50\/50,
+[data-theme="dark"] .bg-slate-50\/70,
+[data-theme="dark"] .bg-slate-50\/80 {
+  background-color: var(--bg-soft);
+}
+
+[data-theme="dark"] .bg-slate-100,
+[data-theme="dark"] .bg-slate-100\/90,
+[data-theme="dark"] .bg-slate-200 {
+  background-color: var(--bg-muted);
+}
+
+[data-theme="dark"] .bg-\[\#E3F2EF\],
+[data-theme="dark"] .bg-\[\#D6EFEA\] {
+  background-color: rgba(20, 184, 166, 0.16);
+}
+
+[data-theme="dark"] button.bg-slate-900 {
+  background-color: #0f766e;
+  color: #ffffff;
+}
+
+[data-theme="dark"] button.bg-slate-900:hover {
+  background-color: #0d9488;
+}
+
+[data-theme="dark"] .border-slate-200,
+[data-theme="dark"] .border-slate-200\/80,
+[data-theme="dark"] .border-slate-200\/70,
+[data-theme="dark"] .border-slate-300 {
+  border-color: var(--border-main);
+}
+
+[data-theme="dark"] .border-slate-100,
+[data-theme="dark"] .divide-slate-100 > :not(:last-child) {
+  border-color: var(--border-subtle);
+}
+
+[data-theme="dark"] .text-slate-900 { color: var(--text-primary); }
+[data-theme="dark"] .text-slate-800,
+[data-theme="dark"] .text-slate-700 { color: var(--text-secondary); }
+[data-theme="dark"] .text-slate-600,
+[data-theme="dark"] .text-slate-500 { color: var(--text-muted); }
+[data-theme="dark"] .text-slate-400 { color: var(--text-faint); }
+[data-theme="dark"] .text-white { color: #ffffff; }
+
+[data-theme="dark"] .text-emerald-700 { color: #34d399; }
+[data-theme="dark"] .text-emerald-800 { color: #6ee7b7; }
+[data-theme="dark"] .text-red-700 { color: #f87171; }
+[data-theme="dark"] .text-amber-700 { color: #fbbf24; }
+[data-theme="dark"] .text-amber-950 { color: #fde68a; }
+[data-theme="dark"] .text-sky-700 { color: #38bdf8; }
+[data-theme="dark"] .text-teal-700,
+[data-theme="dark"] .text-teal-800 { color: #2dd4bf; }
+[data-theme="dark"] .text-teal-950,
+[data-theme="dark"] .text-teal-900\/75,
+[data-theme="dark"] .text-teal-900\/70 { color: #99f6e4; }
+
+[data-theme="dark"] .bg-emerald-50 { background-color: rgba(16, 185, 129, 0.14); }
+[data-theme="dark"] .border-emerald-200 { border-color: rgba(52, 211, 153, 0.35); }
+[data-theme="dark"] .bg-red-50 { background-color: rgba(239, 68, 68, 0.14); }
+[data-theme="dark"] .border-red-200 { border-color: rgba(248, 113, 113, 0.35); }
+[data-theme="dark"] .bg-amber-50\/70 { background-color: rgba(245, 158, 11, 0.14); }
+[data-theme="dark"] .border-amber-200 { border-color: rgba(251, 191, 36, 0.35); }
+[data-theme="dark"] .bg-teal-50 { background-color: rgba(20, 184, 166, 0.14); }
+
+[data-theme="dark"] input,
+[data-theme="dark"] select {
+  background-color: var(--bg-soft);
+  color: var(--text-primary);
+}
+
+[data-theme="dark"] .hover\:bg-slate-50:hover,
+[data-theme="dark"] .hover\:bg-slate-50\/80:hover,
+[data-theme="dark"] .hover\:bg-slate-50\/90:hover {
+  background-color: var(--bg-hover);
+}
+
+[data-theme="dark"] .hover\:bg-slate-100:hover,
+[data-theme="dark"] .hover\:bg-slate-200\/80:hover {
+  background-color: #27374b;
+}
+
+[data-theme="dark"] .hover\:text-slate-900:hover {
+  color: #ffffff;
+}
