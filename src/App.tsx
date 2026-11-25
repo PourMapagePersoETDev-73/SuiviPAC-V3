@@ -25,7 +25,6 @@ import {
   DayEntry,
   EntriesMap,
   Params,
-  PublishConfig,
   ReferenceData,
   ThemeMode,
   YearN1,
@@ -48,7 +47,7 @@ import {
   patchAndDownloadExcelFile,
   writeEntriesToLinkedExcel,
 } from './lib/excelInPlaceWriter';
-import { generateMobileHtml, publishToGitHubPages } from './lib/mobilePublisher';
+import { generateMobileHtml } from './lib/mobilePublisher';
 import { auth } from './lib/firebase';
 import {
   batchUpsertEntriesToCloud,
@@ -89,18 +88,9 @@ function initialDisplayMode(): AppDisplayMode {
 
 const STORAGE_ENTRIES = 'suivi_pac_entries_v1';
 const STORAGE_REF = 'suivi_pac_reference_v1';
-const STORAGE_PUBLISH = 'suivi_pac_publish_v1';
 const STORAGE_GOALS = 'suivi_pac_goals_v1';
 const STORAGE_THEME = 'suivi_pac_theme_v1';
 const STORAGE_AUTO_EXCEL = 'suivi_pac_auto_excel_v1';
-
-const DEFAULT_PUBLISH: PublishConfig = {
-  github_user: '',
-  github_repo: '',
-  github_token: '',
-  github_password: '',
-  github_branch: 'main',
-};
 
 function loadThemeStorage(): ThemeMode {
   try {
@@ -227,9 +217,6 @@ export default function App() {
   const [reference, setReference] = useState<ReferenceData>(() =>
     loadJsonStorage<ReferenceData>(STORAGE_REF, EMPTY_REFERENCE)
   );
-  const [publishConfig, setPublishConfig] = useState<PublishConfig>(() =>
-    loadJsonStorage<PublishConfig>(STORAGE_PUBLISH, DEFAULT_PUBLISH)
-  );
   const [consumptionGoals, setConsumptionGoals] = useState<ConsumptionGoals>(() =>
     loadJsonStorage<ConsumptionGoals>(STORAGE_GOALS, DEFAULT_CONSUMPTION_GOALS)
   );
@@ -266,14 +253,6 @@ export default function App() {
       // Ignore storage quota errors
     }
   }, [reference]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_PUBLISH, JSON.stringify(publishConfig));
-    } catch {
-      // Ignore storage quota errors
-    }
-  }, [publishConfig]);
 
   useEffect(() => {
     try {
@@ -558,21 +537,6 @@ export default function App() {
       'data.json'
     );
     showToast('ok', 'Page mobile générée (index.html et data.json).');
-  };
-
-  const handlePublishOnline = async () => {
-    if (!publishConfig.github_user || !publishConfig.github_repo || !publishConfig.github_token) {
-      setTab('parametres');
-      showToast('err', 'Configurez votre dépôt GitHub et jeton dans Excel & Réglages.');
-      return;
-    }
-    try {
-      showToast('ok', 'Publication en ligne en cours…');
-      const url = await publishToGitHubPages(model, publishConfig);
-      showToast('ok', `Page publiée : ${url}`);
-    } catch (err) {
-      showToast('err', err instanceof Error ? err.message : 'Erreur de publication.');
-    }
   };
 
   const handleResetDefaultData = () => {
@@ -969,7 +933,6 @@ export default function App() {
                   onDeleteDay={handleDeleteDay}
                   onExportExcel={() => exportExcelWorkbook(model, entries)}
                   onDownloadMobile={handleDownloadMobile}
-                  onPublishOnline={handlePublishOnline}
                   onGoToImport={() => setTab('parametres')}
                   readOnly={isWebReadOnly}
                   linkedExcelName={isWebReadOnly ? undefined : linkedExcelName}
@@ -1015,12 +978,10 @@ export default function App() {
                   entries={entries}
                   reference={reference}
                   model={model}
-                  publishConfig={publishConfig}
                   onImportExcel={handleImportExcel}
                   onImportJson={handleImportJson}
                   onUpdateParams={handleUpdateParams}
                   onUpdateYearN1={handleUpdateYearN1}
-                  onUpdatePublishConfig={setPublishConfig}
                   onResetDefaultData={handleResetDefaultData}
                   linkedExcelName={linkedExcelName}
                   writingExcel={writingExcel}

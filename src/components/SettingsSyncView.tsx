@@ -4,7 +4,6 @@ import {
   Upload,
   Download,
   Smartphone,
-  Globe,
   CheckCircle2,
   AlertTriangle,
   RotateCcw,
@@ -16,7 +15,6 @@ import {
   EntriesMap,
   PacModel,
   Params,
-  PublishConfig,
   ReferenceData,
   YearN1,
 } from '../types/pac';
@@ -30,7 +28,6 @@ import {
 import {
   generateEncryptedMobileHtml,
   generateMobileHtml,
-  publishToGitHubPages,
 } from '../lib/mobilePublisher';
 import { frNum, parseFrFloat } from '../lib/pacEngine';
 import { isFileSystemAccessSupported } from '../lib/excelInPlaceWriter';
@@ -39,12 +36,10 @@ interface SettingsSyncViewProps {
   entries: EntriesMap;
   reference: ReferenceData;
   model: PacModel;
-  publishConfig: PublishConfig;
   onImportExcel: (ref: ReferenceData, entries: EntriesMap, overwrite: boolean) => void;
   onImportJson: (entries: EntriesMap, overwrite: boolean) => void;
   onUpdateParams: (params: Params) => void;
   onUpdateYearN1: (yearN1: YearN1 | null) => void;
-  onUpdatePublishConfig: (cfg: PublishConfig) => void;
   onResetDefaultData: () => void;
   linkedExcelName?: string | null;
   writingExcel?: boolean;
@@ -56,12 +51,10 @@ export function SettingsSyncView({
   entries,
   reference,
   model,
-  publishConfig,
   onImportExcel,
   onImportJson,
   onUpdateParams,
   onUpdateYearN1,
-  onUpdatePublishConfig,
   onResetDefaultData,
   linkedExcelName = null,
   writingExcel = false,
@@ -71,8 +64,7 @@ export function SettingsSyncView({
   const fsSupported = isFileSystemAccessSupported();
   const [overwriteImport, setOverwriteImport] = useState(false);
   const [statusMsg, setStatusMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
-  const [publishing, setPublishing] = useState(false);
-  const [publishedUrl, setPublishedUrl] = useState<string | null>(null);
+  const [mobilePassword, setMobilePassword] = useState('');
 
   const [paramsDraft, setParamsDraft] = useState<Params>(() => ({ ...reference.params }));
   const [ynDraft, setYnDraft] = useState<{
@@ -86,8 +78,6 @@ export function SettingsSyncView({
       elec: e.map((v) => (v !== null ? String(v).replace('.', ',') : '')),
     };
   });
-
-  const [pubDraft, setPubDraft] = useState<PublishConfig>(publishConfig);
 
   React.useEffect(() => {
     setParamsDraft({ ...reference.params });
@@ -160,12 +150,12 @@ export function SettingsSyncView({
   };
 
   const handleDownloadMobile = async (encrypted: boolean) => {
-    if (encrypted && !pubDraft.github_password) {
+    if (encrypted && !mobilePassword) {
       notify('err', 'Définissez un mot de passe ci-dessous pour générer la version chiffrée.');
       return;
     }
     const bundle = encrypted
-      ? await generateEncryptedMobileHtml(model, pubDraft.github_password)
+      ? await generateEncryptedMobileHtml(model, mobilePassword)
       : generateMobileHtml(model);
     downloadBlob(
       new Blob([bundle.html], { type: 'text/html;charset=utf-8' }),
@@ -181,22 +171,6 @@ export function SettingsSyncView({
         ? 'Fichiers chiffrés (AES-256-GCM) téléchargés : index_chiffre.html et data.json.'
         : 'Page mobile autonome téléchargée : index.html et data.json.'
     );
-  };
-
-  const handlePublish = async (ev: React.FormEvent) => {
-    ev.preventDefault();
-    onUpdatePublishConfig(pubDraft);
-    setPublishing(true);
-    setPublishedUrl(null);
-    try {
-      const url = await publishToGitHubPages(model, pubDraft);
-      setPublishedUrl(url);
-      notify('ok', `Page publiée avec succès sur ${url}`);
-    } catch (err) {
-      notify('err', err instanceof Error ? err.message : 'Échec de publication GitHub.');
-    } finally {
-      setPublishing(false);
-    }
   };
 
   return (
@@ -484,20 +458,14 @@ export function SettingsSyncView({
         </div>
       </form>
 
-      {/* Section 3 : Page mobile & GitHub Pages (AES-256-GCM) */}
-      <form
-        onSubmit={handlePublish}
-        className="rounded-xl border border-slate-200 bg-white p-6"
-      >
+      {/* Section 3 : Export page mobile hors-ligne */}
+      <section className="rounded-xl border border-slate-200 bg-white p-6">
         <div className="pb-4 border-b border-slate-100">
           <h2 className="font-display text-base font-semibold text-slate-900">
-            3. Page mobile autonome & Publication GitHub Pages
+            3. Page mobile hors-ligne (export statique)
           </h2>
           <p className="mt-1 text-xs text-slate-500">
-            Générez une page mobile hors-ligne ou publiez l’ancienne page statique chiffrée sur GitHub Pages (PBKDF2-SHA256 + AES-256-GCM). Vos identifiants restent uniquement dans ce navigateur.
-          </p>
-          <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50/70 px-3 py-2 text-xs text-amber-950">
-            <strong>Attention :</strong> si vous hébergez déjà cette application complète sur votre dépôt GitHub Pages (<span className="font-mono-num">Suivi_PAC_Perso</span>), vos données sont synchronisées <strong>en direct via Firebase</strong> — n’utilisez pas « Publier en ligne » sur ce même dépôt au risque d’écraser <span className="font-mono-num">index.html</span>.
+            Votre page en ligne (Web / Android 16) est déjà synchronisée en direct via Firebase à chaque sauvegarde. Utilisez ces boutons uniquement si vous souhaitez télécharger une copie statique autonome (en clair ou chiffrée AES-256-GCM).
           </p>
         </div>
 
@@ -521,117 +489,19 @@ export function SettingsSyncView({
           </button>
         </div>
 
-        <div className="mt-6 pt-5 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          <div>
-            <label className="block text-xs font-medium text-slate-700 mb-1">
-              Identifiant GitHub
-            </label>
-            <input
-              type="text"
-              value={pubDraft.github_user}
-              placeholder="ex. PourMapagePerso"
-              onChange={(ev) =>
-                setPubDraft((p) => ({ ...p, github_user: ev.target.value }))
-              }
-              className="h-9 w-full rounded-lg border border-slate-200 px-3 text-sm text-slate-900 focus:border-teal-700 focus:outline-none"
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-medium text-slate-700 mb-1">
-              Nom du dépôt GitHub
-            </label>
-            <input
-              type="text"
-              value={pubDraft.github_repo}
-              placeholder="ex. Suivi_PAC_Perso"
-              onChange={(ev) =>
-                setPubDraft((p) => ({ ...p, github_repo: ev.target.value }))
-              }
-              className="h-9 w-full rounded-lg border border-slate-200 px-3 text-sm text-slate-900 focus:border-teal-700 focus:outline-none"
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-medium text-slate-700 mb-1">
-              Branche
-            </label>
-            <input
-              type="text"
-              value={pubDraft.github_branch}
-              placeholder="main"
-              onChange={(ev) =>
-                setPubDraft((p) => ({ ...p, github_branch: ev.target.value }))
-              }
-              className="h-9 w-full rounded-lg border border-slate-200 px-3 text-sm text-slate-900 focus:border-teal-700 focus:outline-none"
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-medium text-slate-700 mb-1">
-              Jeton GitHub (Fine-grained PAT)
-            </label>
-            <input
-              type="password"
-              value={pubDraft.github_token}
-              placeholder="github_pat_..."
-              onChange={(ev) =>
-                setPubDraft((p) => ({ ...p, github_token: ev.target.value }))
-              }
-              className="h-9 w-full rounded-lg border border-slate-200 px-3 text-sm text-slate-900 focus:border-teal-700 focus:outline-none"
-            />
-          </div>
-
-          <div className="sm:col-span-2">
-            <label className="block text-xs font-medium text-slate-700 mb-1">
-              Mot de passe de chiffrement de la page (optionnel, recommandé)
-            </label>
-            <input
-              type="password"
-              value={pubDraft.github_password}
-              placeholder="Phrase secrète pour déverrouiller sur mobile"
-              onChange={(ev) =>
-                setPubDraft((p) => ({ ...p, github_password: ev.target.value }))
-              }
-              className="h-9 w-full rounded-lg border border-slate-200 px-3 text-sm text-slate-900 focus:border-teal-700 focus:outline-none"
-            />
-          </div>
+        <div className="mt-4 max-w-md">
+          <label className="block text-xs font-medium text-slate-700 mb-1">
+            Mot de passe de chiffrement (pour la version chiffrée uniquement)
+          </label>
+          <input
+            type="password"
+            value={mobilePassword}
+            placeholder="Phrase secrète pour déverrouiller sur mobile"
+            onChange={(ev) => setMobilePassword(ev.target.value)}
+            className="h-9 w-full rounded-lg border border-slate-200 px-3 text-sm text-slate-900 focus:border-teal-700 focus:outline-none"
+          />
         </div>
-
-        <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
-          {publishedUrl ? (
-            <div className="text-xs text-emerald-700 font-medium">
-              Publié : <span className="font-mono-num underline">{publishedUrl}</span>
-            </div>
-          ) : (
-            <div className="text-xs text-slate-500">
-              Envoie <span className="font-mono-num">index.html</span> et{' '}
-              <span className="font-mono-num">data.json</span> sur la branche cible.
-            </div>
-          )}
-
-          <div className="flex items-center gap-2.5">
-            <button
-              type="button"
-              onClick={() => {
-                onUpdatePublishConfig(pubDraft);
-                notify('ok', 'Configuration de publication enregistrée localement.');
-              }}
-              className="rounded-lg border border-slate-200 px-3.5 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors whitespace-nowrap shrink-0"
-            >
-              Mémoriser
-            </button>
-            <button
-              type="submit"
-              disabled={publishing}
-              className="inline-flex items-center gap-2 rounded-lg bg-teal-700 px-4 py-2 text-sm font-medium text-white hover:bg-teal-800 disabled:opacity-50 transition-colors whitespace-nowrap shrink-0"
-            >
-              <Globe className="h-4 w-4" />
-              {publishing ? 'Publication…' : 'Publier en ligne'}
-            </button>
-          </div>
-        </div>
-      </form>
+      </section>
     </div>
   );
 }

@@ -12,7 +12,6 @@ import {
   Calendar,
   FileSpreadsheet,
   Smartphone,
-  Globe,
   FolderSync,
   Loader2,
   EyeOff,
@@ -58,7 +57,6 @@ interface DailyEntryViewProps {
   onDeleteDay: (iso: string) => void;
   onExportExcel: () => void;
   onDownloadMobile: () => void;
-  onPublishOnline: () => void;
   onGoToImport: () => void;
   readOnly?: boolean;
   linkedExcelName?: string | null;
@@ -100,7 +98,6 @@ export function DailyEntryView({
   onDeleteDay,
   onExportExcel,
   onDownloadMobile,
-  onPublishOnline,
   onGoToImport,
   readOnly = false,
   linkedExcelName = null,
@@ -617,14 +614,6 @@ export function DailyEntryView({
             >
               <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-700" />
               Exporter copie Excel
-            </button>
-            <button
-              type="button"
-              onClick={onPublishOnline}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 transition-colors whitespace-nowrap shrink-0"
-            >
-              <Globe className="h-3.5 w-3.5 text-teal-700" />
-              Publier en ligne
             </button>
             <button
               type="button"
