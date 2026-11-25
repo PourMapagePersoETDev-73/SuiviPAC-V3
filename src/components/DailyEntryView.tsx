@@ -15,6 +15,8 @@ import {
   Globe,
   FolderSync,
   Loader2,
+  EyeOff,
+  RotateCcw,
 } from 'lucide-react';
 import {
   DayEntry,
@@ -48,7 +50,11 @@ interface DailyEntryViewProps {
   entries: EntriesMap;
   reference: ReferenceData;
   model: PacModel;
-  onSaveDay: (iso: string, entry: DayEntry) => void;
+  onSaveDay: (iso: string, entry: DayEntry) => Promise<boolean> | void;
+  onSaveBoth?: (
+    iso: string,
+    entry: DayEntry
+  ) => Promise<{ cloudOk: boolean; excelOk: boolean }>;
   onDeleteDay: (iso: string) => void;
   onExportExcel: () => void;
   onDownloadMobile: () => void;
@@ -59,8 +65,11 @@ interface DailyEntryViewProps {
   autoWriteExcel?: boolean;
   writingExcel?: boolean;
   onToggleAutoWriteExcel?: (enabled: boolean) => void;
-  onWriteToLinkedExcel?: (opts?: { forcePick?: boolean; onlyDate?: string }) => void;
-  onPatchExcelFile?: (file: File) => void;
+  onWriteToLinkedExcel?: (opts?: {
+    forcePick?: boolean;
+    onlyDate?: string;
+  }) => Promise<boolean> | void;
+  onPatchExcelFile?: (file: File) => Promise<boolean> | void;
 }
 
 type FormStrings = Record<FieldKey, string>;
@@ -87,6 +96,7 @@ export function DailyEntryView({
   reference,
   model,
   onSaveDay,
+  onSaveBoth,
   onDeleteDay,
   onExportExcel,
   onDownloadMobile,
@@ -102,14 +112,51 @@ export function DailyEntryView({
 }: DailyEntryViewProps) {
   const fsSupported = isFileSystemAccessSupported();
   const isBrave = isBraveBrowser();
-  const [form, setForm] = useState<FormStrings>(() => entryToForm(entries[selectedDate]));
+  const savedEntry = entries[selectedDate];
+  const savedForm = React.useMemo(() => entryToForm(savedEntry), [savedEntry]);
+
+  const [form, setForm] = useState<FormStrings>(() => entryToForm(savedEntry));
   const [savedNotice, setSavedNotice] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
+  const [savingBoth, setSavingBoth] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'unsaved' | 'cloud_only' | 'both'>(() =>
+    savedEntry ? 'idle' : 'unsaved'
+  );
+  const [awaitingExcelForReveal, setAwaitingExcelForReveal] = useState(false);
+
+  const isDirty = React.useMemo(
+    () => !readOnly && FIELDS.some((k) => form[k].trim() !== savedForm[k].trim()),
+    [readOnly, form, savedForm]
+  );
+
+  const prevDateRef = React.useRef(selectedDate);
+  const isDirtyRef = React.useRef(isDirty);
+  isDirtyRef.current = isDirty;
 
   useEffect(() => {
-    setForm(entryToForm(entries[selectedDate]));
-    setFormError(null);
-  }, [selectedDate, entries]);
+    if (prevDateRef.current !== selectedDate) {
+      prevDateRef.current = selectedDate;
+      setForm(savedForm);
+      setFormError(null);
+      setSavedNotice(null);
+      setAwaitingExcelForReveal(false);
+      setSaveStatus(savedEntry ? 'idle' : 'unsaved');
+      return;
+    }
+    if (!isDirtyRef.current) {
+      setForm(savedForm);
+    }
+  }, [selectedDate, savedForm, savedEntry]);
+
+  useEffect(() => {
+    if (!isDirty) return;
+    const onBeforeUnload = (ev: BeforeUnloadEvent) => {
+      ev.preventDefault();
+      ev.returnValue = '';
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
+  }, [isDirty]);
 
   const parsedEntry = React.useMemo((): { entry: DayEntry | null; error: string | null } => {
     const e: Partial<DayEntry> = {};
@@ -136,14 +183,21 @@ export function DailyEntryView({
     return { entry: e as DayEntry, error: null };
   }, [form]);
 
+  const isVerdictMasked = !readOnly && (isDirty || awaitingExcelForReveal);
+  const verdictEntry = readOnly
+    ? savedEntry
+    : isVerdictMasked
+    ? undefined
+    : savedEntry;
+
   const hasEdf =
-    parsedEntry.entry !== null &&
-    (parsedEntry.entry.edf_kwh !== null || parsedEntry.entry.edf_eur !== null);
+    verdictEntry !== undefined &&
+    (verdictEntry.edf_kwh !== null || verdictEntry.edf_eur !== null);
 
   const computed = React.useMemo(() => {
-    if (!parsedEntry.entry || !hasEdf) return null;
-    return computeDay(reference, selectedDate, parsedEntry.entry);
-  }, [parsedEntry.entry, hasEdf, reference, selectedDate]);
+    if (!verdictEntry || !hasEdf) return null;
+    return computeDay(reference, selectedDate, verdictEntry);
+  }, [verdictEntry, hasEdf, reference, selectedDate]);
 
   const estimatedEdfEur = React.useMemo(() => {
     if (!parsedEntry.entry) return null;
@@ -157,32 +211,106 @@ export function DailyEntryView({
     [entries]
   );
 
-  const handleSave = (ev: React.FormEvent) => {
-    ev.preventDefault();
+  const validateBeforeSave = (): DayEntry | null => {
     if (parsedEntry.error || !parsedEntry.entry) {
       setFormError(parsedEntry.error || 'Saisie invalide.');
-      return;
+      return null;
     }
     const anyNumeric = FIELDS.some(
       (k) => k !== 'remarque' && parsedEntry.entry![k] !== null
     );
     if (!anyNumeric && !parsedEntry.entry.remarque) {
-      setFormError('Renseignez au moins une mesure avant d’enregistrer.');
-      return;
+      setFormError('Renseignez au moins une mesure avant de sauvegarder.');
+      return null;
     }
     setFormError(null);
-    onSaveDay(selectedDate, parsedEntry.entry);
-    if (autoWriteExcel && linkedExcelName && onWriteToLinkedExcel) {
-      onWriteToLinkedExcel({ onlyDate: selectedDate });
+    return parsedEntry.entry;
+  };
+
+  const handleSaveBothSubmit = async (ev: React.FormEvent) => {
+    ev.preventDefault();
+    const validEntry = validateBeforeSave();
+    if (!validEntry) return;
+
+    if (!onSaveBoth) {
+      await handleSaveCloudOnly();
+      return;
     }
-    setSavedNotice(`Journée du ${fmtDateFr(selectedDate)} enregistrée.`);
-    window.setTimeout(() => setSavedNotice(null), 3000);
+
+    setSavingBoth(true);
+    try {
+      const res = await onSaveBoth(selectedDate, validEntry);
+      if (res.cloudOk && res.excelOk) {
+        setSaveStatus('both');
+        setAwaitingExcelForReveal(false);
+        setSavedNotice(
+          `Journée du ${fmtDateFr(selectedDate)} sauvegardée sur les 2 supports (Cloud + Suivi_PAC.xlsx).`
+        );
+        window.setTimeout(() => setSavedNotice(null), 4000);
+      } else if (res.cloudOk) {
+        setSaveStatus('cloud_only');
+        setAwaitingExcelForReveal(true);
+        setSavedNotice(
+          `Cloud sauvegardé pour le ${fmtDateFr(selectedDate)}. Terminez la sauvegarde Excel pour actualiser le Verdict.`
+        );
+      }
+    } finally {
+      setSavingBoth(false);
+    }
+  };
+
+  const handleSaveCloudOnly = async () => {
+    const validEntry = validateBeforeSave();
+    if (!validEntry) return;
+
+    const ok = await onSaveDay(selectedDate, validEntry);
+    if (ok === false) return;
+
+    setAwaitingExcelForReveal(false);
+    if (autoWriteExcel && linkedExcelName && onWriteToLinkedExcel) {
+      const excelOk = await onWriteToLinkedExcel({ onlyDate: selectedDate });
+      setSaveStatus(excelOk === true ? 'both' : 'cloud_only');
+    } else {
+      setSaveStatus('cloud_only');
+    }
+    setSavedNotice(`Journée du ${fmtDateFr(selectedDate)} enregistrée dans le Cloud.`);
+    window.setTimeout(() => setSavedNotice(null), 3500);
+  };
+
+  const handleWriteExcelAction = async () => {
+    if (!onWriteToLinkedExcel) return;
+    const ok = await onWriteToLinkedExcel();
+    if (ok === true) {
+      setAwaitingExcelForReveal(false);
+      if (!isDirty && entries[selectedDate]) {
+        setSaveStatus('both');
+      }
+    }
+  };
+
+  const handlePatchExcelAction = async (file: File) => {
+    if (!onPatchExcelFile) return;
+    const ok = await onPatchExcelFile(file);
+    if (ok === true) {
+      setAwaitingExcelForReveal(false);
+      if (!isDirty && entries[selectedDate]) {
+        setSaveStatus('both');
+      }
+    }
+  };
+
+  const handleResetDraft = () => {
+    setForm(savedForm);
+    setFormError(null);
+    setAwaitingExcelForReveal(false);
   };
 
   const handleDelete = () => {
     if (!entries[selectedDate]) return;
     onDeleteDay(selectedDate);
     setForm(entryToForm(undefined));
+    setAwaitingExcelForReveal(false);
+    setSaveStatus('unsaved');
     setSavedNotice(`Saisie du ${fmtDateFr(selectedDate)} supprimée.`);
     window.setTimeout(() => setSavedNotice(null), 3000);
   };
@@ -193,7 +321,7 @@ export function DailyEntryView({
   );
 
   const n1Available = hasN1References(reference);
-  const ecsCycles = parseEcsCycles(parsedEntry.entry?.remarque);
+  const ecsCycles = parseEcsCycles(verdictEntry?.remarque);
 
   const prevComputed = React.useMemo(() => {
     const prevIso = addDaysIso(selectedDate, -1);
@@ -221,12 +349,19 @@ export function DailyEntryView({
       ? TrendingUp
       : Minus;
 
+  const needsSaveRed =
+    isDirty ||
+    !savedEntry ||
+    saveStatus === 'unsaved' ||
+    saveStatus === 'cloud_only' ||
+    awaitingExcelForReveal;
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
       {/* Colonne gauche : Formulaire de saisie (mode PC uniquement) */}
       {!readOnly && (
         <form
-          onSubmit={handleSave}
+          onSubmit={handleSaveBothSubmit}
           className="lg:col-span-5 rounded-xl border border-slate-200 bg-white p-6"
         >
         <div className="flex flex-wrap items-center justify-between gap-2 pb-4 border-b border-slate-100">
@@ -235,7 +370,11 @@ export function DailyEntryView({
               Saisie du jour
             </h2>
             <p className="text-xs text-slate-500 mt-0.5">
-              {entries[selectedDate] ? 'Journée déjà enregistrée' : 'Nouvelle journée'}
+              {isDirty
+                ? 'Modifications non sauvegardées'
+                : savedEntry
+                ? 'Journée déjà enregistrée'
+                : 'Nouvelle journée'}
             </p>
           </div>
           <div className="flex items-center gap-1.5">
@@ -363,93 +502,139 @@ export function DailyEntryView({
           </div>
         )}
 
-        <div className="mt-5 flex flex-wrap items-center gap-2 pt-4 border-t border-slate-100">
-          <button
-            type="submit"
-            className="inline-flex items-center gap-2 rounded-lg bg-teal-700 px-4 py-2.5 text-sm font-medium text-white hover:bg-teal-800 transition-colors whitespace-nowrap shrink-0"
-          >
-            <Save className="h-4 w-4" />
-            Enregistrer ce jour
-          </button>
+        <div className="mt-5 space-y-2.5 pt-4 border-t border-slate-100">
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="submit"
+              disabled={savingBoth || writingExcel}
+              className={`inline-flex flex-1 min-w-[220px] items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold text-white transition-colors whitespace-nowrap disabled:opacity-60 ${
+                needsSaveRed
+                  ? 'bg-red-600 hover:bg-red-700'
+                  : 'bg-emerald-600 hover:bg-emerald-700'
+              }`}
+              title="Enregistre automatiquement cette journée dans le Cloud et dans votre fichier Suivi_PAC.xlsx"
+            >
+              {savingBoth ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : needsSaveRed ? (
+                <Save className="h-4 w-4" />
+              ) : (
+                <CheckCircle2 className="h-4 w-4" />
+              )}
+              {savingBoth
+                ? 'Sauvegarde en cours…'
+                : isDirty
+                ? 'Sauvegarder (Cloud + PAC)'
+                : saveStatus === 'cloud_only' || awaitingExcelForReveal
+                ? 'Cloud OK · Sauvegarder dans PAC'
+                : !savedEntry
+                ? 'Sauvegarder (Cloud + PAC)'
+                : saveStatus === 'both'
+                ? 'Sauvegardé (Cloud + PAC)'
+                : 'Sauvegardé'}
+            </button>
 
-          {entries[selectedDate] && (
+            {isDirty && (
+              <button
+                type="button"
+                onClick={handleResetDraft}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors whitespace-nowrap shrink-0"
+                title="Annuler les saisies non sauvegardées"
+              >
+                <RotateCcw className="h-4 w-4" />
+                Annuler
+              </button>
+            )}
+
+            {entries[selectedDate] && (
+              <button
+                type="button"
+                onClick={handleDelete}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2.5 text-sm font-medium text-slate-700 hover:bg-red-50 hover:text-red-700 hover:border-red-200 transition-colors whitespace-nowrap shrink-0"
+              >
+                <Trash2 className="h-4 w-4" />
+                Supprimer
+              </button>
+            )}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
-              onClick={handleDelete}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2.5 text-sm font-medium text-slate-700 hover:bg-red-50 hover:text-red-700 hover:border-red-200 transition-colors whitespace-nowrap shrink-0"
+              onClick={handleSaveCloudOnly}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 transition-colors whitespace-nowrap shrink-0"
+              title="Enregistre uniquement dans le Cloud Firebase"
             >
-              <Trash2 className="h-4 w-4" />
-              Supprimer
+              <Save className="h-3.5 w-3.5 text-teal-700" />
+              Enregistrer ce jour
             </button>
-          )}
-        </div>
 
-        <div className="mt-2.5 flex flex-wrap items-center gap-2">
-          {fsSupported && onWriteToLinkedExcel && (
+            {fsSupported && onWriteToLinkedExcel && (
+              <button
+                type="button"
+                disabled={writingExcel}
+                onClick={handleWriteExcelAction}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-teal-700/30 bg-teal-50 px-3 py-1.5 text-xs font-medium text-teal-800 hover:bg-teal-100 disabled:opacity-60 transition-colors whitespace-nowrap shrink-0"
+                title="Met à jour directement la feuille Journal de votre fichier Suivi_PAC.xlsx sans toucher aux formules ni aux graphiques"
+              >
+                {writingExcel ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <FolderSync className="h-3.5 w-3.5" />
+                )}
+                {linkedExcelName
+                  ? `Écrire dans ${linkedExcelName}`
+                  : 'Écrire dans Suivi_PAC.xlsx'}
+              </button>
+            )}
+            {!fsSupported && onPatchExcelFile && (
+              <label
+                className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-teal-700/30 bg-teal-50 px-3 py-1.5 text-xs font-medium text-teal-800 hover:bg-teal-100 transition-colors whitespace-nowrap shrink-0"
+                title="Sélectionnez votre Suivi_PAC.xlsx pour le mettre à jour en conservant toutes ses formules et graphiques"
+              >
+                {writingExcel ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <FolderSync className="h-3.5 w-3.5" />
+                )}
+                Mettre à jour Suivi_PAC.xlsx
+                <input
+                  type="file"
+                  accept=".xlsx,.xlsm"
+                  onChange={(ev) => {
+                    const file = ev.target.files?.[0];
+                    ev.target.value = '';
+                    if (file) void handlePatchExcelAction(file);
+                  }}
+                  className="hidden"
+                />
+              </label>
+            )}
             <button
               type="button"
-              disabled={writingExcel}
-              onClick={() => onWriteToLinkedExcel()}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-teal-700/30 bg-teal-50 px-3 py-1.5 text-xs font-medium text-teal-800 hover:bg-teal-100 disabled:opacity-60 transition-colors whitespace-nowrap shrink-0"
-              title="Met à jour directement la feuille Journal de votre fichier Suivi_PAC.xlsx sans toucher aux formules ni aux graphiques"
+              onClick={onExportExcel}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 transition-colors whitespace-nowrap shrink-0"
             >
-              {writingExcel ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <FolderSync className="h-3.5 w-3.5" />
-              )}
-              {linkedExcelName
-                ? `Écrire dans ${linkedExcelName}`
-                : 'Écrire dans Suivi_PAC.xlsx'}
+              <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-700" />
+              Exporter copie Excel
             </button>
-          )}
-          {!fsSupported && onPatchExcelFile && (
-            <label
-              className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-teal-700/30 bg-teal-50 px-3 py-1.5 text-xs font-medium text-teal-800 hover:bg-teal-100 transition-colors whitespace-nowrap shrink-0"
-              title="Sélectionnez votre Suivi_PAC.xlsx pour le mettre à jour en conservant toutes ses formules et graphiques"
+            <button
+              type="button"
+              onClick={onPublishOnline}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 transition-colors whitespace-nowrap shrink-0"
             >
-              {writingExcel ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <FolderSync className="h-3.5 w-3.5" />
-              )}
-              Mettre à jour Suivi_PAC.xlsx
-              <input
-                type="file"
-                accept=".xlsx,.xlsm"
-                onChange={(ev) => {
-                  const file = ev.target.files?.[0];
-                  ev.target.value = '';
-                  if (file) onPatchExcelFile(file);
-                }}
-                className="hidden"
-              />
-            </label>
-          )}
-          <button
-            type="button"
-            onClick={onExportExcel}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 transition-colors whitespace-nowrap shrink-0"
-          >
-            <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-700" />
-            Exporter copie Excel
-          </button>
-          <button
-            type="button"
-            onClick={onPublishOnline}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 transition-colors whitespace-nowrap shrink-0"
-          >
-            <Globe className="h-3.5 w-3.5 text-teal-700" />
-            Publier en ligne
-          </button>
-          <button
-            type="button"
-            onClick={onDownloadMobile}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 transition-colors whitespace-nowrap shrink-0"
-          >
-            <Smartphone className="h-3.5 w-3.5 text-slate-600" />
-            Page mobile
-          </button>
+              <Globe className="h-3.5 w-3.5 text-teal-700" />
+              Publier en ligne
+            </button>
+            <button
+              type="button"
+              onClick={onDownloadMobile}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 transition-colors whitespace-nowrap shrink-0"
+            >
+              <Smartphone className="h-3.5 w-3.5 text-slate-600" />
+              Page mobile
+            </button>
+          </div>
         </div>
 
         {(onWriteToLinkedExcel || onPatchExcelFile) && (
@@ -524,7 +709,16 @@ export function DailyEntryView({
               <p className="text-xs font-medium text-slate-500">
                 Verdict du {fmtDateFr(selectedDate)}
               </p>
-              {!hasEdf ? (
+              {isVerdictMasked ? (
+                <div className="mt-1 flex items-center gap-2 font-display text-lg font-semibold text-red-700">
+                  <EyeOff className="h-5 w-5 shrink-0" />
+                  <span>
+                    {awaitingExcelForReveal && !isDirty
+                      ? 'En attente de l’écriture dans Suivi_PAC.xlsx'
+                      : 'Saisie en cours — Verdict masqué jusqu’à la sauvegarde'}
+                  </span>
+                </div>
+              ) : !hasEdf ? (
                 <h3 className="mt-1 font-display text-xl font-semibold text-slate-500">
                   {readOnly ? 'Aucune mesure EDF enregistrée pour cette date' : 'Saisissez l’énergie EDF du jour'}
                 </h3>
@@ -587,134 +781,177 @@ export function DailyEntryView({
             </div>
           </div>
 
-          {!hasEdf ? (
-            <p className="mt-4 text-sm text-slate-600 leading-relaxed">
-              Le diagnostic compare la dépense EDF du jour à l’an dernier et à la moyenne des années précédentes (gaz + élec, ±{Math.round(reference.params.fen)} jours), ainsi que le COP réel par rapport au seuil de rentabilité gaz ({frNum(model.kpi.cop_rentab, 2)}).
-            </p>
+          {isVerdictMasked ? (
+            <div className="mt-5 rounded-xl border border-red-200 bg-red-50 p-5 space-y-3">
+              <p className="text-sm font-medium text-red-700">
+                {awaitingExcelForReveal && !isDirty
+                  ? 'La journée est enregistrée dans le Cloud. Écrivez maintenant dans Suivi_PAC.xlsx pour finaliser la sauvegarde sur les 2 supports et révéler le Verdict du jour.'
+                  : 'Tant que vous modifiez cette journée, le Verdict du jour et les graphiques restent cachés pour éviter d’oublier de sauvegarder.'}
+              </p>
+              <p className="text-xs text-slate-600 leading-relaxed">
+                Cliquez sur le bouton rouge{' '}
+                <strong>
+                  {awaitingExcelForReveal && !isDirty
+                    ? '« Cloud OK · Sauvegarder dans PAC »'
+                    : '« Sauvegarder (Cloud + PAC) »'}
+                </strong>{' '}
+                pour enregistrer automatiquement dans le Cloud et dans votre fichier{' '}
+                <span className="font-mono-num">Suivi_PAC.xlsx</span>, puis actualiser les résultats.
+              </p>
+              <div className="flex flex-wrap items-center gap-2 pt-1">
+                {isDirty && (
+                  <button
+                    type="button"
+                    onClick={handleResetDraft}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 transition-colors"
+                  >
+                    <RotateCcw className="h-3.5 w-3.5" />
+                    Annuler mes modifications
+                  </button>
+                )}
+                {awaitingExcelForReveal && !isDirty && (
+                  <button
+                    type="button"
+                    onClick={() => setAwaitingExcelForReveal(false)}
+                    className="text-xs font-medium text-slate-600 hover:text-slate-900 underline"
+                  >
+                    Afficher le Verdict (Cloud seul)
+                  </button>
+                )}
+              </div>
+            </div>
           ) : (
-            <div className="mt-5 grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-4">
-              <div>
-                <div className="text-xs text-slate-500">Dépense EDF</div>
-                <div className="mt-0.5 text-xl font-bold font-mono-num text-slate-900">
-                  {frNum(computed?.depense, 2)} €
-                </div>
-                {computed?.eco_n1 !== null && computed?.eco_n1 !== undefined ? (
-                  <div
-                    className={`mt-0.5 text-xs font-medium font-mono-num ${
-                      computed.eco_n1 >= 0 ? 'text-emerald-700' : 'text-red-700'
-                    }`}
-                  >
-                    {frNum(computed.eco_n1, 2, true)} € vs N-1
+            <>
+              {!hasEdf ? (
+                <p className="mt-4 text-sm text-slate-600 leading-relaxed">
+                  Le diagnostic compare la dépense EDF du jour à l’an dernier et à la moyenne des années précédentes (gaz + élec, ±{Math.round(reference.params.fen)} jours), ainsi que le COP réel par rapport au seuil de rentabilité gaz ({frNum(model.kpi.cop_rentab, 2)}).
+                </p>
+              ) : (
+                <div className="mt-5 grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-4">
+                  <div>
+                    <div className="text-xs text-slate-500">Dépense EDF</div>
+                    <div className="mt-0.5 text-xl font-bold font-mono-num text-slate-900">
+                      {frNum(computed?.depense, 2)} €
+                    </div>
+                    {computed?.eco_n1 !== null && computed?.eco_n1 !== undefined ? (
+                      <div
+                        className={`mt-0.5 text-xs font-medium font-mono-num ${
+                          computed.eco_n1 >= 0 ? 'text-emerald-700' : 'text-red-700'
+                        }`}
+                      >
+                        {frNum(computed.eco_n1, 2, true)} € vs N-1
+                      </div>
+                    ) : prevComputed?.depense !== null &&
+                      prevComputed?.depense !== undefined &&
+                      computed?.depense !== null &&
+                      computed?.depense !== undefined ? (
+                      <div className="mt-0.5 text-xs text-slate-500 font-mono-num">
+                        {frNum(computed.depense - prevComputed.depense, 2, true)} € vs veille
+                      </div>
+                    ) : null}
                   </div>
-                ) : prevComputed?.depense !== null &&
-                  prevComputed?.depense !== undefined &&
-                  computed?.depense !== null &&
-                  computed?.depense !== undefined ? (
-                  <div className="mt-0.5 text-xs text-slate-500 font-mono-num">
-                    {frNum(computed.depense - prevComputed.depense, 2, true)} € vs veille
-                  </div>
-                ) : null}
-              </div>
 
-              <div>
-                <div className="text-xs text-slate-500">Réf. N-1 (gaz + élec)</div>
-                <div className="mt-0.5 text-xl font-bold font-mono-num text-slate-900">
-                  {computed?.ref_n1 !== null && computed?.ref_n1 !== undefined
-                    ? `${frNum(computed.ref_n1, 2)} €`
-                    : '–'}
-                </div>
-                {computed?.benef_n1 !== null && computed?.benef_n1 !== undefined && (
-                  <div
-                    className={`mt-0.5 text-xs font-medium font-mono-num ${
-                      computed.benef_n1 >= 0 ? 'text-emerald-700' : 'text-red-700'
-                    }`}
-                  >
-                    {frNum(computed.benef_n1 * 100, 0, true)} % bénéfice
+                  <div>
+                    <div className="text-xs text-slate-500">Réf. N-1 (gaz + élec)</div>
+                    <div className="mt-0.5 text-xl font-bold font-mono-num text-slate-900">
+                      {computed?.ref_n1 !== null && computed?.ref_n1 !== undefined
+                        ? `${frNum(computed.ref_n1, 2)} €`
+                        : '–'}
+                    </div>
+                    {computed?.benef_n1 !== null && computed?.benef_n1 !== undefined && (
+                      <div
+                        className={`mt-0.5 text-xs font-medium font-mono-num ${
+                          computed.benef_n1 >= 0 ? 'text-emerald-700' : 'text-red-700'
+                        }`}
+                      >
+                        {frNum(computed.benef_n1 * 100, 0, true)} % bénéfice
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
 
-              <div>
-                <div className="text-xs text-slate-500">COP réel</div>
-                <div
-                  className={`mt-0.5 text-xl font-bold font-mono-num ${
-                    computed?.cop === null || computed?.cop === undefined
-                      ? 'text-slate-400'
-                      : computed.cop >= reference.params.cop_cible
-                      ? 'text-emerald-700'
-                      : computed.cop >= model.kpi.cop_rentab
-                      ? 'text-amber-700'
-                      : 'text-red-700'
-                  }`}
-                >
-                  {frNum(computed?.cop, 2)}
-                </div>
-                <div className="mt-0.5 text-xs text-slate-500 font-mono-num">
-                  cible {frNum(reference.params.cop_cible, 2)} · gaz {frNum(model.kpi.cop_rentab, 2)}
-                </div>
-              </div>
-
-              <div>
-                <div className="text-xs text-slate-500">Élec hors PAC</div>
-                <div className="mt-0.5 text-base font-semibold font-mono-num text-slate-900">
-                  {computed?.hors_pac !== null && computed?.hors_pac !== undefined
-                    ? `${frNum(computed.hors_pac, 1)} kWh`
-                    : '–'}
-                </div>
-                {computed?.elec_ref_kwh !== null && computed?.elec_ref_kwh !== undefined && (
-                  <div className="mt-0.5 text-xs text-slate-500 font-mono-num">
-                    réf. totale {frNum(computed.elec_ref_kwh, 1)} kWh
+                  <div>
+                    <div className="text-xs text-slate-500">COP réel</div>
+                    <div
+                      className={`mt-0.5 text-xl font-bold font-mono-num ${
+                        computed?.cop === null || computed?.cop === undefined
+                          ? 'text-slate-400'
+                          : computed.cop >= reference.params.cop_cible
+                          ? 'text-emerald-700'
+                          : computed.cop >= model.kpi.cop_rentab
+                          ? 'text-amber-700'
+                          : 'text-red-700'
+                      }`}
+                    >
+                      {frNum(computed?.cop, 2)}
+                    </div>
+                    <div className="mt-0.5 text-xs text-slate-500 font-mono-num">
+                      cible {frNum(reference.params.cop_cible, 2)} · gaz {frNum(model.kpi.cop_rentab, 2)}
+                    </div>
                   </div>
-                )}
-              </div>
 
-              <div>
-                <div className="text-xs text-slate-500">Température ext.</div>
-                <div className="mt-0.5 text-base font-semibold font-mono-num text-slate-900">
-                  {parsedEntry.entry?.temp !== null && parsedEntry.entry?.temp !== undefined
-                    ? `${frNum(parsedEntry.entry.temp, 1)} °C`
-                    : '–'}
-                </div>
-                {computed?.temp_ref !== null && computed?.temp_ref !== undefined && (
-                  <div className="mt-0.5 text-xs text-slate-500 font-mono-num">
-                    habituel {frNum(computed.temp_ref, 1)} °C
+                  <div>
+                    <div className="text-xs text-slate-500">Élec hors PAC</div>
+                    <div className="mt-0.5 text-base font-semibold font-mono-num text-slate-900">
+                      {computed?.hors_pac !== null && computed?.hors_pac !== undefined
+                        ? `${frNum(computed.hors_pac, 1)} kWh`
+                        : '–'}
+                    </div>
+                    {computed?.elec_ref_kwh !== null && computed?.elec_ref_kwh !== undefined && (
+                      <div className="mt-0.5 text-xs text-slate-500 font-mono-num">
+                        réf. totale {frNum(computed.elec_ref_kwh, 1)} kWh
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
 
-              <div>
-                <div className="text-xs text-slate-500">Remarque / ECS</div>
-                <div className="mt-0.5 text-sm font-medium text-slate-900 truncate">
-                  {ecsCycles ? `Cycles ECS : ${ecsCycles}` : parsedEntry.entry?.remarque || '–'}
-                </div>
-                {parsedEntry.entry?.gaz_kwh !== null && parsedEntry.entry?.gaz_kwh !== undefined && (
-                  <div className="mt-0.5 text-xs text-slate-500 font-mono-num">
-                    gaz {frNum(parsedEntry.entry.gaz_kwh, 1)} kWh (non compté)
+                  <div>
+                    <div className="text-xs text-slate-500">Température ext.</div>
+                    <div className="mt-0.5 text-base font-semibold font-mono-num text-slate-900">
+                      {verdictEntry?.temp !== null && verdictEntry?.temp !== undefined
+                        ? `${frNum(verdictEntry.temp, 1)} °C`
+                        : '–'}
+                    </div>
+                    {computed?.temp_ref !== null && computed?.temp_ref !== undefined && (
+                      <div className="mt-0.5 text-xs text-slate-500 font-mono-num">
+                        habituel {frNum(computed.temp_ref, 1)} °C
+                      </div>
+                    )}
                   </div>
-                )}
+
+                  <div>
+                    <div className="text-xs text-slate-500">Remarque / ECS</div>
+                    <div className="mt-0.5 text-sm font-medium text-slate-900 truncate">
+                      {ecsCycles ? `Cycles ECS : ${ecsCycles}` : verdictEntry?.remarque || '–'}
+                    </div>
+                    {verdictEntry?.gaz_kwh !== null && verdictEntry?.gaz_kwh !== undefined && (
+                      <div className="mt-0.5 text-xs text-slate-500 font-mono-num">
+                        gaz {frNum(verdictEntry.gaz_kwh, 1)} kWh (non compté)
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* 2 graphiques de saisie côte à côte */}
+              <div className="mt-6 pt-6 border-t border-slate-100 grid grid-cols-1 md:grid-cols-12 gap-5 items-center">
+                <div className="md:col-span-8">
+                  <h4 className="text-sm font-semibold text-slate-900 mb-2">
+                    Aujourd’hui (EDF) vs références (€)
+                  </h4>
+                  <DayComparisonChart day={computed} model={model} />
+                </div>
+                <div className="md:col-span-4">
+                  <h4 className="text-sm font-semibold text-slate-900 mb-2 text-center">
+                    Objectif économies de l’année
+                  </h4>
+                  <AnnualSavingsGauge
+                    value={model.kpi.eco_cumul}
+                    target={model.kpi.obj_eur}
+                    fallbackSpend={totalEdfSpend}
+                  />
+                </div>
               </div>
-            </div>
+            </>
           )}
-
-          {/* 2 graphiques de saisie côte à côte */}
-          <div className="mt-6 pt-6 border-t border-slate-100 grid grid-cols-1 md:grid-cols-12 gap-5 items-center">
-            <div className="md:col-span-8">
-              <h4 className="text-sm font-semibold text-slate-900 mb-2">
-                Aujourd’hui (EDF) vs références (€)
-              </h4>
-              <DayComparisonChart day={computed} model={model} />
-            </div>
-            <div className="md:col-span-4">
-              <h4 className="text-sm font-semibold text-slate-900 mb-2 text-center">
-                Objectif économies de l’année
-              </h4>
-              <AnnualSavingsGauge
-                value={model.kpi.eco_cumul}
-                target={model.kpi.obj_eur}
-                fallbackSpend={totalEdfSpend}
-              />
-            </div>
-          </div>
         </section>
       </div>
     </div>

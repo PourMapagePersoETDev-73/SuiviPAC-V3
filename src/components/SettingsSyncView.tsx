@@ -494,7 +494,10 @@ export function SettingsSyncView({
             3. Page mobile autonome & Publication GitHub Pages
           </h2>
           <p className="mt-1 text-xs text-slate-500">
-            Générez une page mobile hors-ligne ou publiez sur GitHub Pages avec chiffrement client WebCrypto (PBKDF2-SHA256 200 000 tours + AES-256-GCM). Vos identifiants restent uniquement dans ce navigateur.
+            Générez une page mobile hors-ligne ou publiez l’ancienne page statique chiffrée sur GitHub Pages (PBKDF2-SHA256 + AES-256-GCM). Vos identifiants restent uniquement dans ce navigateur.
+          </p>
+          <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50/70 px-3 py-2 text-xs text-amber-950">
+            <strong>Attention :</strong> si vous hébergez déjà cette application complète sur votre dépôt GitHub Pages (<span className="font-mono-num">Suivi_PAC_Perso</span>), vos données sont synchronisées <strong>en direct via Firebase</strong> — n’utilisez pas « Publier en ligne » sur ce même dépôt au risque d’écraser <span className="font-mono-num">index.html</span>.
           </p>
         </div>
 

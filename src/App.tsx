@@ -373,24 +373,28 @@ export default function App() {
 
   const canMutate = Boolean(user && user.emailVerified && displayMode === 'pc');
 
-  const handleSaveDay = (iso: string, entry: DayEntry) => {
-    if (!canMutate || !user) return;
+  const handleSaveDay = async (iso: string, entry: DayEntry): Promise<boolean> => {
+    if (!canMutate || !user) return false;
     const nextEntries = {
       ...entriesRef.current,
       [iso]: entry,
     };
     entriesRef.current = nextEntries;
     setEntries(nextEntries);
-    void saveDayEntryToCloud(user.uid, iso, entry).catch((err) => {
+    try {
+      await saveDayEntryToCloud(user.uid, iso, entry);
+      return true;
+    } catch (err) {
       showToast('err', err instanceof Error ? err.message : 'Échec de synchronisation du jour.');
-    });
+      return false;
+    }
   };
 
   const handleWriteToLinkedExcel = async (opts?: {
     forcePick?: boolean;
     onlyDate?: string;
-  }) => {
-    if (!canMutate) return;
+  }): Promise<boolean> => {
+    if (!canMutate) return false;
     setWritingExcel(true);
     try {
       const res = await writeEntriesToLinkedExcel(entriesRef.current, {
@@ -403,31 +407,33 @@ export default function App() {
           'err',
           `Aucune date correspondante trouvée dans « ${res.fileName} » (${res.notFoundDates.slice(0, 3).join(', ')}).`
         );
-      } else {
-        const extra =
-          res.notFoundDates.length > 0
-            ? ` (${res.notFoundDates.length} date(s) hors plage du classeur)`
-            : '';
-        showToast(
-          'ok',
-          `${res.writtenCount} journée(s) écrite(s) directement dans « ${res.fileName} »${extra}.`
-        );
+        return false;
       }
+      const extra =
+        res.notFoundDates.length > 0
+          ? ` (${res.notFoundDates.length} date(s) hors plage du classeur)`
+          : '';
+      showToast(
+        'ok',
+        `${res.writtenCount} journée(s) écrite(s) directement dans « ${res.fileName} »${extra}.`
+      );
+      return true;
     } catch (err) {
       if (err instanceof DOMException && err.name === 'AbortError') {
-        return;
+        return false;
       }
       showToast(
         'err',
         err instanceof Error ? err.message : 'Impossible d’écrire dans le fichier Excel.'
       );
+      return false;
     } finally {
       setWritingExcel(false);
     }
   };
 
-  const handlePatchExcelFile = async (file: File) => {
-    if (!canMutate) return;
+  const handlePatchExcelFile = async (file: File): Promise<boolean> => {
+    if (!canMutate) return false;
     setWritingExcel(true);
     try {
       const res = await patchAndDownloadExcelFile(file, entriesRef.current);
@@ -436,20 +442,45 @@ export default function App() {
           'err',
           `Aucune date correspondante trouvée dans « ${res.fileName} ».`
         );
-      } else {
-        showToast(
-          'ok',
-          `« ${res.fileName} » mis à jour (${res.writtenCount} journée(s)) et téléchargé avec toutes vos formules et graphiques.`
-        );
+        return false;
       }
+      showToast(
+        'ok',
+        `« ${res.fileName} » mis à jour (${res.writtenCount} journée(s)) et téléchargé avec toutes vos formules et graphiques.`
+      );
+      return true;
     } catch (err) {
       showToast(
         'err',
         err instanceof Error ? err.message : 'Impossible de mettre à jour le fichier Excel.'
       );
+      return false;
     } finally {
       setWritingExcel(false);
     }
+  };
+
+  const handleSaveBoth = async (
+    iso: string,
+    entry: DayEntry
+  ): Promise<{ cloudOk: boolean; excelOk: boolean }> => {
+    if (!canMutate || !user) return { cloudOk: false, excelOk: false };
+    const cloudPromise = handleSaveDay(iso, entry);
+
+    if (!window.showOpenFilePicker) {
+      const cloudOk = await cloudPromise;
+      if (cloudOk) {
+        showToast(
+          'ok',
+          'Enregistré dans le Cloud. Utilisez « Mettre à jour Suivi_PAC.xlsx » pour compléter la sauvegarde locale.'
+        );
+      }
+      return { cloudOk, excelOk: false };
+    }
+
+    const excelPromise = handleWriteToLinkedExcel();
+    const [cloudOk, excelOk] = await Promise.all([cloudPromise, excelPromise]);
+    return { cloudOk, excelOk };
   };
 
   const handleDeleteDay = (iso: string) => {
@@ -934,6 +965,7 @@ export default function App() {
                   reference={reference}
                   model={model}
                   onSaveDay={handleSaveDay}
+                  onSaveBoth={isWebReadOnly ? undefined : handleSaveBoth}
                   onDeleteDay={handleDeleteDay}
                   onExportExcel={() => exportExcelWorkbook(model, entries)}
                   onDownloadMobile={handleDownloadMobile}
