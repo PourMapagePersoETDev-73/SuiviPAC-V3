@@ -848,7 +848,7 @@ export function DailyEntryView({
                           computed.eco_n1 >= 0 ? 'text-emerald-700' : 'text-red-700'
                         }`}
                       >
-                        {frNum(computed.eco_n1, 2, true)} € vs N-1
+                        {frNum(-computed.eco_n1, 2, true)} € vs N-1
                       </div>
                     ) : prevComputed?.depense !== null &&
                       prevComputed?.depense !== undefined &&
@@ -873,7 +873,7 @@ export function DailyEntryView({
                           computed.benef_n1 >= 0 ? 'text-emerald-700' : 'text-red-700'
                         }`}
                       >
-                        {frNum(computed.benef_n1 * 100, 0, true)} % bénéfice
+                        {frNum(-computed.benef_n1 * 100, 0, true)} % vs N-1
                       </div>
                     )}
                   </div>

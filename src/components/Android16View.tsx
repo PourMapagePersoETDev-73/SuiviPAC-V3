@@ -380,7 +380,7 @@ export function Android16View({
                   {activeDay.verdict}
                   {activeDay.eco_n1 !== null && (
                     <span className="font-mono-num ml-1">
-                      ({frNum(activeDay.eco_n1, 2, true)} €)
+                      ({frNum(-activeDay.eco_n1, 2, true)} €)
                     </span>
                   )}
                 </div>
@@ -418,10 +418,18 @@ export function Android16View({
                   </div>
                 </div>
                 <div>
-                  <div className="text-[10px] text-slate-500">Bénéfice N-1</div>
-                  <div className="text-xs font-semibold font-mono-num text-emerald-700">
+                  <div className="text-[10px] text-slate-500">Écart N-1</div>
+                  <div
+                    className={`text-xs font-semibold font-mono-num ${
+                      activeDay?.benef_n1 === null || activeDay?.benef_n1 === undefined
+                        ? 'text-slate-400'
+                        : activeDay.benef_n1 >= 0
+                        ? 'text-emerald-700'
+                        : 'text-red-700'
+                    }`}
+                  >
                     {activeDay?.benef_n1 !== null && activeDay?.benef_n1 !== undefined
-                      ? `${frNum(activeDay.benef_n1 * 100, 0, true)} %`
+                      ? `${frNum(-activeDay.benef_n1 * 100, 0, true)} %`
                       : '–'}
                   </div>
                 </div>
