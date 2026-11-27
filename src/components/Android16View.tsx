@@ -48,6 +48,7 @@ import {
   HeatingYearChart,
   MonthlySavingsChart,
 } from './Charts';
+import { APP_VERSION } from '../lib/version';
 
 type AndroidTab = 'apercu' | 'climat' | 'graphiques' | 'journal';
 
@@ -230,8 +231,11 @@ export function Android16View({
                 </span>
               )}
             </div>
-            <h2 className="font-display text-lg font-bold tracking-tight truncate">
-              Suivi PAC
+            <h2 className="font-display text-lg font-bold tracking-tight truncate flex items-baseline gap-2">
+              <span>Suivi PAC</span>
+              <span className="text-xs font-mono-num font-semibold text-teal-100/90">
+                {APP_VERSION}
+              </span>
             </h2>
           </div>
           <div className="flex items-center gap-2 shrink-0">

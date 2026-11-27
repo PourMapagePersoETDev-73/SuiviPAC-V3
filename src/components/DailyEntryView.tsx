@@ -121,10 +121,26 @@ export function DailyEntryView({
   );
   const [awaitingExcelForReveal, setAwaitingExcelForReveal] = useState(false);
 
-  const isDirty = React.useMemo(
-    () => !readOnly && FIELDS.some((k) => form[k].trim() !== savedForm[k].trim()),
-    [readOnly, form, savedForm]
-  );
+  const isDirty = React.useMemo(() => {
+    if (readOnly) return false;
+    for (const k of FIELDS) {
+      if (k === 'remarque') {
+        const cur = form.remarque.trim();
+        const prev = (savedEntry?.remarque ?? '').trim();
+        if (cur !== prev) return true;
+      } else {
+        const curRaw = form[k].trim();
+        const prevVal = savedEntry?.[k] ?? null;
+        if (!curRaw) {
+          if (prevVal !== null) return true;
+        } else {
+          const curVal = parseFrFloat(curRaw);
+          if (curVal === null || curVal !== prevVal) return true;
+        }
+      }
+    }
+    return false;
+  }, [readOnly, form, savedEntry]);
 
   const prevDateRef = React.useRef(selectedDate);
   const isDirtyRef = React.useRef(isDirty);
@@ -237,6 +253,9 @@ export function DailyEntryView({
     setSavingBoth(true);
     try {
       const res = await onSaveBoth(selectedDate, validEntry);
+      if (res.cloudOk) {
+        setForm(entryToForm(validEntry));
+      }
       if (res.cloudOk && res.excelOk) {
         setSaveStatus('both');
         setAwaitingExcelForReveal(false);
@@ -263,6 +282,7 @@ export function DailyEntryView({
     const ok = await onSaveDay(selectedDate, validEntry);
     if (ok === false) return;
 
+    setForm(entryToForm(validEntry));
     setAwaitingExcelForReveal(false);
     if (autoWriteExcel && linkedExcelName && onWriteToLinkedExcel) {
       const excelOk = await onWriteToLinkedExcel({ onlyDate: selectedDate });

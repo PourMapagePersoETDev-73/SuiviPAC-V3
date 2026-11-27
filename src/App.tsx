@@ -71,6 +71,7 @@ import { JournalView } from './components/JournalView';
 import { SettingsSyncView } from './components/SettingsSyncView';
 import { Android16View } from './components/Android16View';
 import { ThemesView } from './components/ThemesView';
+import { APP_VERSION } from './lib/version';
 
 type TabId = 'saisie' | 'suivi' | 'journal' | 'parametres' | 'themes';
 type AppDisplayMode = 'pc' | 'web' | 'android';
@@ -635,8 +636,13 @@ export default function App() {
         <aside className="hidden lg:flex w-64 shrink-0 flex-col border-r border-slate-200 bg-white">
           <div className="px-6 py-5 border-b border-slate-100">
             <div className="flex items-center justify-between gap-2">
-              <div className="font-display text-lg font-bold tracking-tight text-slate-900 whitespace-nowrap">
-                Suivi PAC
+              <div className="flex items-baseline gap-2 whitespace-nowrap">
+                <span className="font-display text-lg font-bold tracking-tight text-slate-900">
+                  Suivi PAC
+                </span>
+                <span className="text-xs font-mono-num font-semibold text-slate-400">
+                  {APP_VERSION}
+                </span>
               </div>
               {isWebReadOnly && (
                 <span className="inline-flex items-center gap-1 text-[11px] font-medium text-teal-700">
@@ -721,9 +727,14 @@ export default function App() {
           />
           <div className="relative z-10 w-64 max-w-[80vw] bg-white h-full flex flex-col border-r border-slate-200">
             <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
-              <span className="font-display text-base font-bold text-slate-900">
-                Suivi PAC
-              </span>
+              <div className="flex items-baseline gap-2">
+                <span className="font-display text-base font-bold text-slate-900">
+                  Suivi PAC
+                </span>
+                <span className="text-[11px] font-mono-num font-semibold text-slate-400">
+                  {APP_VERSION}
+                </span>
+              </div>
               <button
                 type="button"
                 onClick={() => setMobileMenuOpen(false)}
@@ -796,7 +807,7 @@ export default function App() {
                   displayMode === 'android' ? '' : 'lg:hidden'
                 } font-display font-bold text-slate-900 whitespace-nowrap`}
               >
-                Suivi PAC
+                Suivi PAC · {APP_VERSION}
               </span>
               <span
                 className={`${

@@ -3,6 +3,7 @@ import { signInWithPopup } from 'firebase/auth';
 import { Lock, ShieldCheck, Smartphone, Monitor, Globe } from 'lucide-react';
 import { auth, googleProvider } from '../lib/firebase';
 import { PWAInstallButton } from './PWAStatus';
+import { APP_VERSION } from '../lib/version';
 
 export function AuthGate({ errorMessage }: { errorMessage?: string | null }) {
   const [loading, setLoading] = useState(false);
@@ -33,8 +34,11 @@ export function AuthGate({ errorMessage }: { errorMessage?: string | null }) {
               <ShieldCheck className="h-4 w-4" />
               Accès privé &amp; synchronisé
             </div>
-            <h1 className="mt-1.5 font-display text-2xl font-bold tracking-tight text-slate-900">
-              Suivi PAC
+            <h1 className="mt-1.5 font-display text-2xl font-bold tracking-tight text-slate-900 flex items-baseline gap-2">
+              <span>Suivi PAC</span>
+              <span className="text-sm font-mono-num font-semibold text-slate-400">
+                {APP_VERSION}
+              </span>
             </h1>
             <p className="mt-1 text-sm text-slate-500">
               Connectez votre compte Google pour synchroniser vos données entre votre PC, le Web et votre smartphone Android 16.
